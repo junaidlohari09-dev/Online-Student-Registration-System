@@ -1,111 +1,78 @@
 
 <?php
-require_once "db.php";
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
 
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     header("Location: index.php");
-    exit();
+    exit;
 }
 
-function clean($data) {
-    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
+function clean($value) {
+    return htmlspecialchars(trim((string)$value), ENT_QUOTES, 'UTF-8');
 }
 
-$fullname = trim($_POST["fullname"] ?? "");
-$usn = strtoupper(trim($_POST["usn"] ?? ""));
-$email = trim($_POST["email"] ?? "");
-$phone = trim($_POST["phone"] ?? "");
-$course = trim($_POST["course"] ?? "");
-$semester = trim($_POST["semester"] ?? "");
-$gender = trim($_POST["gender"] ?? "");
-$address = trim($_POST["address"] ?? "");
+// Get form values
+$fullname = trim($_POST['fullname'] ?? $_POST['full_name'] ?? '');
+$usn      = trim($_POST['usn'] ?? '');
+$email    = trim($_POST['email'] ?? '');
+$phone    = trim($_POST['phone'] ?? '');
+$gender   = trim($_POST['gender'] ?? '');
+$course   = trim($_POST['course'] ?? '');
+$semester = (int)($_POST['semester'] ?? 0);
+$address  = trim($_POST['address'] ?? '');
 
-$errors = [];
-
-if (strlen($fullname) < 3 || !preg_match("/^[A-Za-z ]+$/", $fullname)) {
-    $errors[] = "Invalid full name.";
+// Validate form
+if (
+    $fullname === '' ||
+    $usn === '' ||
+    !filter_var($email, FILTER_VALIDATE_EMAIL) ||
+    $phone === '' ||
+    $course === '' ||
+    $semester < 1 ||
+    $semester > 8 ||
+    $address === ''
+) {
+    die("Invalid or incomplete form details. Please go back and check your form.");
 }
 
-if (!preg_match("/^[A-Za-z0-9]+$/", $usn)) {
-    $errors[] = "Invalid USN.";
+try {
+    require_once "db.php";
+
+    // Generate registration ID
+    $registration_id = "STU" . date("Ymd") . random_int(1000, 9999);
+
+    // Insert registration into database
+    $sql = "INSERT INTO students
+    (registration_id, full_name, usn, email, phone, gender, course, semester, address)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+    $stmt = $conn->prepare($sql);
+
+    $stmt->bind_param(
+        "sssssssis",
+        $registration_id,
+        $fullname,
+        $usn,
+        $email,
+        $phone,
+        $gender,
+        $course,
+        $semester,
+        $address
+    );
+
+    $stmt->execute();
+    $stmt->close();
+    $conn->close();
+
+} catch (mysqli_sql_exception $e) {
+    die("DATABASE ERROR: " . htmlspecialchars($e->getMessage()));
+
+} catch (Throwable $e) {
+    error_log($e->getMessage());
+    die("Something went wrong. Please try again later.");
 }
-
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    $errors[] = "Invalid email address.";
-}
-
-if (!preg_match("/^[0-9]{10}$/", $phone)) {
-    $errors[] = "Mobile number must contain 10 digits.";
-}
-
-$allowedCourses = [
-    "Computer Science Engineering",
-    "Information Science Engineering",
-    "Electronics and Communication",
-    "Mechanical Engineering",
-    "Civil Engineering",
-    "Artificial Intelligence and Machine Learning"
-];
-
-if (!in_array($course, $allowedCourses, true)) {
-    $errors[] = "Please select a valid course.";
-}
-
-if (!in_array($semester, ["1","2","3","4","5","6","7","8"], true)) {
-    $errors[] = "Please select a valid semester.";
-}
-
-if (!in_array($gender, ["Male","Female","Other"], true)) {
-    $errors[] = "Please select a valid gender.";
-}
-
-if (strlen($address) < 10) {
-    $errors[] = "Please enter a complete address.";
-}
-
-if (!empty($errors)) {
-    echo "<h2>Registration Failed</h2><ul>";
-    foreach ($errors as $error) {
-        echo "<li>" . clean($error) . "</li>";
-    }
-    echo "</ul><a href='index.php'>Go Back</a>";
-    exit();
-}
-
-$registrationID = "STU" . date("Ymd") . random_int(1000, 9999);
-
-$sql = "INSERT INTO students
-(registration_id, full_name, usn, email, phone, gender, course, semester, address)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-$stmt = $conn->prepare($sql);
-
-if (!$stmt) {
-    die("Database query preparation failed.");
-}
-
-$stmt->bind_param(
-    "sssssssis",
-    $registrationID,
-    $fullname,
-    $usn,
-    $email,
-    $phone,
-    $gender,
-    $course,
-    $semester,
-    $address
-);
-
-if (!$stmt->execute()) {
-    if ($conn->errno === 1062 || $stmt->errno === 1062) {
-        die("This USN or registration ID is already registered. <a href='index.php'>Go Back</a>");
-    }
-    die("Registration could not be saved. Please try again.");
-}
-
-$stmt->close();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -115,52 +82,119 @@ $conn->close();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registration Successful</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .success-container {
+            max-width: 650px;
+            margin: 40px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .success-title {
+            color: #198754;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .details p {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            overflow-wrap: anywhere;
+        }
+
+        .details strong {
+            display: inline-block;
+            min-width: 130px;
+        }
+
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 25px;
+            flex-wrap: wrap;
+        }
+
+        .action-buttons a,
+        .action-buttons button {
+            padding: 11px 20px;
+            border: none;
+            border-radius: 6px;
+            background: #198754;
+            color: white;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        @media print {
+            .action-buttons {
+                display: none;
+            }
+        }
+    </style>
 </head>
 <body>
 
-<header class="header">
-    <div class="container">
-        <h1>Student Portal</h1>
-        <p>Online Student Registration System</p>
+<div class="success-container">
+
+    <h2 class="success-title">
+        Registration Successful!
+    </h2>
+
+    <p style="text-align:center;">
+        Your student registration has been submitted successfully.
+    </p>
+
+    <div class="details">
+
+        <p><strong>Registration ID:</strong>
+            <?= clean($registration_id) ?>
+        </p>
+
+        <p><strong>Full Name:</strong>
+            <?= clean($fullname) ?>
+        </p>
+
+        <p><strong>USN:</strong>
+            <?= clean($usn) ?>
+        </p>
+
+        <p><strong>Email:</strong>
+            <?= clean($email) ?>
+        </p>
+
+        <p><strong>Phone:</strong>
+            <?= clean($phone) ?>
+        </p>
+
+        <p><strong>Gender:</strong>
+            <?= clean($gender) ?>
+        </p>
+
+        <p><strong>Course:</strong>
+            <?= clean($course) ?>
+        </p>
+
+        <p><strong>Semester:</strong>
+            <?= clean($semester) ?>
+        </p>
+
+        <p><strong>Address:</strong>
+            <?= clean($address) ?>
+        </p>
+
     </div>
-</header>
 
-<main class="container">
-    <section class="registration-card">
+    <div class="action-buttons">
+        <button onclick="window.print()">Print Details</button>
 
-        <div class="form-heading">
-            <h2>Registration Successful!</h2>
-            <p>Your student registration has been saved successfully.</p>
-        </div>
+        <a href="index.php">Back to Registration</a>
+    </div>
 
-        <div class="success-details">
-            <h3>Registration Details</h3>
-
-            <p><strong>Registration ID:</strong> <?= clean($registrationID) ?></p>
-            <p><strong>Full Name:</strong> <?= clean($fullname) ?></p>
-            <p><strong>USN:</strong> <?= clean($usn) ?></p>
-            <p><strong>Email:</strong> <?= clean($email) ?></p>
-            <p><strong>Mobile:</strong> <?= clean($phone) ?></p>
-            <p><strong>Course:</strong> <?= clean($course) ?></p>
-            <p><strong>Semester:</strong> <?= clean($semester) ?></p>
-            <p><strong>Gender:</strong> <?= clean($gender) ?></p>
-            <p><strong>Address:</strong> <?= clean($address) ?></p>
-        </div>
-
-        <div class="success-actions">
-            <button onclick="window.print()" class="submit-btn">
-                Print Registration
-            </button>
-
-            <a href="index.php" class="back-btn">Back to Home</a>
-        </div>
-
-    </section>
-</main>
-
-<footer class="footer">
-    <p>© 2026 Student Portal | Online Student Registration System</p>
-</footer>
+</div>
 
 </body>
 </html>
